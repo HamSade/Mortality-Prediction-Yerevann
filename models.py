@@ -71,11 +71,11 @@ class AAE(nn.Module):
     ###############################################          
     def forward(self, x, ae_loss, criterion):
         
-        in_len = x.size(0)
-        out_len = x.size(0) 
+        in_len = x.shape[0]
+        out_len = x.shape[0]
         
         ## Encoder
-        enc_outs = torch.zeros(self.max_length, self.encoder.hidden_size, device=device)        
+        enc_outs = torch.zeros(in_len, self.encoder.hidden_size, device=device)        
         enc_hid = self.encoder.initHidden()
         
         for ei in range(in_len):
