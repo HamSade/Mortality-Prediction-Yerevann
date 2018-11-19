@@ -103,10 +103,12 @@ class AAE(nn.Module):
         use_teacher_forcing = True if random.random() < self.teacher_forcing_ratio else False
         
         print("use_teacher_forcing = ", use_teacher_forcing)
+        
         if use_teacher_forcing:
             # Teacher forcing: Feed the target as the next input
             for di in range(out_len):
                 dec_out, dec_hid = self.decoder(dec_in, dec_hid)
+                print("dec_out.shape", dec_out)
                 ae_loss += criterion(dec_out, x[di]) # x as target
                 dec_in = x[di]  # x as target =  Teacher forcing    
         else:            
