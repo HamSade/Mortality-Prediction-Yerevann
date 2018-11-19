@@ -5,6 +5,7 @@ Created on Fri Nov  9 16:29:43 2018
 @author: hamed
 """
 
+import torch
 import numpy as np
 import os
 
@@ -14,12 +15,13 @@ from mimic3models.in_hospital_mortality import utils
 
 # Hamed-added :
 from time import time
+from torch.utils.data import Dataset, DataLoader
 
-
-def dataset_loader(phase, args, target_repl=False):
+#%%
+def dataset_reader(phase, args, target_repl=False):
     
     if phase == "train":
-        #%% Build readers & discretizers
+        #% Build readers & discretizers
         train_reader = InHospitalMortalityReader(dataset_dir=os.path.join(args.data, 'train'),
                                                  listfile=os.path.join(args.data, 'train_listfile.csv'),
                                                  period_length=48.0)
@@ -73,17 +75,48 @@ def dataset_loader(phase, args, target_repl=False):
         
         print("Reading finished after {} seconds".format(time() - start))
         
-        return train_raw, val_raw
-      
-      
-    #%% test phase
-    else:
+        return (train_raw, val_raw)
+     
+    else: ################################### TEST phase
         test_reader = InHospitalMortalityReader(dataset_dir=os.path.join(args.data, 'test'),
                                             listfile=os.path.join(args.data, 'test_listfile.csv'),
                                             period_length=48.0)
         test_raw = utils.load_data(test_reader, discretizer, normalizer, args.small_part,
                           return_names=True)
-    
         return test_raw
 
+#%%
+class dataset_class(Dataset):
+    def __init__(self, args, phase="train"):
+        self.dataset = dataset_reader(args=args, phase=phase)
+        self.phase = phase
+        
+        if phase == "train":
+            # train dataset = (train [data, lables], valid[data, labels])
+            self.train_set = self.dataset[0][0] # Labels are discarded
+            self.valid_set = self.dataset[1][0]
+            
+#            print("self.train_set.shape, self.valid_set.shape = ", self.train_set.shape, self.valid_set.shape)
+        else:
+            self.test_set = self.dataset[0]
+            
+    def __len__(self):
+        if self.phase == "train":
+            return self.train_set.shape[0]
+        else:
+            return self.test_set.shape[0]
+
+    def __getitem__(self, idx):
+        if self.phase == "train":
+            return (torch.from_numpy(self.train_set[idx]),torch.from_numpy(self.valid_set[idx]))
+        else:
+            return self.test_set[idx]
     
+#%% 
+def data_loader(dataset, batch_size = 64):
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    
+    
+    
+
+ 

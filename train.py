@@ -12,27 +12,17 @@ from __future__ import print_function
 import math
 import argparse
 import os
-#import imp
-#import re
-
-#from mimic3models import keras_utils
-#from mimic3models import common_utils
-
-#from mimic3models import metrics
-#from keras.callbacks import ModelCheckpoint, CSVLogger
-
 # Hamed-added :
-
+###########################################
 import torch
-import numpy as np
-import torch.nn as nn
-from time import time
-#import pdb
-from dataset_loader import dataset_loader
-
-from models import AAE, style_disc, cluster_disc
 from torch import optim
 from torch.autograd import Variable
+
+import numpy as np
+from time import time
+from dataset_loader import dataset_class, data_loader
+
+from models import AAE, style_disc, cluster_disc
 
 
 import pdb
@@ -41,10 +31,11 @@ import colored_traceback; colored_traceback.add_hook()
 #%%
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--input_size',  type=int, default=256)  #TODO: CHECK
-parser.add_argument('--hidden_size', type=int, default=256)
-parser.add_argument('--output_size', type=int, default=256)
-parser.add_argument('--MAX_LENGTH',  type=int, default=100)
+parser.add_argument('--input_size',  type=int, default=76)  #TODO: CHECK
+parser.add_argument('--hidden_size', type=int, default=76) #TODO: or 256? Can be changed
+parser.add_argument('--output_size', type=int, default=76)
+
+#parser.add_argument('--MAX_LENGTH',  type=int, default=100)
 
 #%%
 parser.add_argument('--target_repl_coef', type=float, default=0.0)
@@ -59,7 +50,7 @@ parser.add_argument('--output_dir', type=str, help='Directory relative which all
 # Added during running                     
 parser.add_argument('--K', type=int, default=5,
                     help='number of clusters')
-parser.add_argument('--n_iters', type=int, default=100000,
+parser.add_argument('--n_iters', type=int, default=1000,
                     help='number of training iters')
 parser.add_argument('--timestep', type=float, default=1.0,
                         help="fixed timestep used in the dataset")  
@@ -71,7 +62,7 @@ parser.add_argument('--imputation', type=str, default='previous')
 
 #####################################################################                             
                                         
-parser.add_argument('--dim', type=int, default=256,
+parser.add_argument('--dim', type=int, default=76, #TODO: was 256. Changed to 76 top match input.shape[-1]
                     help='number of hidden units')
 parser.add_argument('--depth', type=int, default=1,
                     help='number of bi-LSTMs')
@@ -81,7 +72,7 @@ parser.add_argument('--epochs', type=int, default=100,
                                     
 parser.add_argument('--load_state', type=str, default="",
                     help='state file path')
-parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--batch_size', type=int, default=16)
 
 parser.add_argument('--l2', type=float, default=0, help='L2 regularization')
 parser.add_argument('--l1', type=float, default=0, help='L1 regularization')
@@ -129,80 +120,86 @@ cuda = True if torch.cuda.is_available() else False
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
 
-def train(x, models, opts, losses):
+#%%
+def train(data, models, opts, losses):
     
     enc_opt, dec_opt, c_disc_opt, s_disc_opt = opts
     ae, c_disc, s_disc = models
     ae_loss, adv_loss = losses    
     
-    target_length = x.shape[0]
-    
-    ## SHOULD BE 3-STEP AAE training (Reconst + Discs + Enc (as Gens))
-    enc_opt.zero_grad()
-    dec_opt.zero_grad()
-    c_disc_opt.zero_grad()
-    s_disc_opt.zero_grad()
-    
-    ae_loss = 0
-    
-    pdb.set_trace()
-
-    cluster, style, ae_loss, dec_attn, dec_out = ae(x, ae_loss, ae_loss)
-    
-    ae_loss.backward()
-    dec_opt.step() #TODO: the order matters
-    enc_opt.step()
-       
-    # FIRST UPDATE DISCs and then GENs (AAE PAPER)    
-    ''' In https://github.com/eriklindernoren/PyTorch-GAN/blob/master/implementations/aae/aae.py
-    Authors mistakenly update DFECODER params for generator. Only updating Encoder params make more sense here'''
-    
-    real = Variable(Tensor(x.shape[0], 1).fill_(1.0), requires_grad=False)  #TODO: check dimensions
-    fake = Variable(Tensor(x.shape[0], 1).fill_(0.0), requires_grad=False)    
-    
-    temp = np.random.randint(low=0, high=args.K, size=(1,x.shape[0]) ) #TODO: check the dimension
-    categ_batch = np.zeros((temp.size, temp.max()+1))
-    categ_batch[np.arange(temp.size),temp] = 1
-    
-    gauss_batch = Variable(Tensor(np.random.rand( (x.shape[0], args.hidden_size - args.K) ) ), requires_grad=False)  #TODO: check the dimension. STandard Gaussian selected
-    
-    real_cluster =  c_disc(categ_batch)
-    real_style = s_disc(gauss_batch)    
-    
-    fake_cluster = c_disc(cluster)
-    fake_style = s_disc(style)
-    
-    # Cluster disc
-    c_disc_loss = 0.5 * (adv_loss(real_cluster, real) + adv_loss(fake_cluster, fake))
-    
-    c_disc_loss.backward()
-    c_disc_opt.step()
-    
-    # Style disc
-    s_disc_loss = 0.5 * (adv_loss(real_style, real) + adv_loss(fake_style, fake))
-    
-    s_disc_loss.backward()
-    s_disc_opt.step()
-    
-    # Cluster gen(encoder)
-    c_gen_loss = adv_loss(fake_cluster, real)    
-    c_gen_loss.backward()
-    
-    # Style gen(encoder)
-    s_gen_loss = adv_loss(fake_style, real)    
-    s_gen_loss.backward()
-    
-    enc_opt.step()  #TODO: only one encoder update as the Gen for both cluster and style parts
+    for step, x in enumerate(data):
+        print("step = ", step)
         
-    ae_loss_ = ae_loss.item()/target_length
-    c_disc_loss_ = c_disc_loss.item()/target_length
-    s_disc_loss_ = s_disc_loss.item()/target_length
-    c_gen_loss_ = c_gen_loss.item()/target_length
-    s_gen_loss_ = s_gen_loss.item()/target_length
+#        print("train data shape = ", x[0].shape) # bs x 48 x 76
+        x = x[0]
+        target_length = x.shape[0]
+        
+        ## SHOULD BE 3-STEP AAE training (Reconst + Discs + Enc (as Gens))
+        enc_opt.zero_grad()
+        dec_opt.zero_grad()
+        c_disc_opt.zero_grad()
+        s_disc_opt.zero_grad()
+        
+        ae_loss = 0
     
-    adv_losses_ = (c_disc_loss_, s_disc_loss_, c_gen_loss_, s_gen_loss_)
-
-    return cluster, style, ae_loss_, adv_losses_#, dec_attn, dec_out
+        cluster, style, ae_loss, dec_attn, dec_out = ae(x, ae_loss, ae_loss)
+        
+#        pdb.set_trace()
+        
+        ae_loss.backward()
+        dec_opt.step() #TODO: the order matters
+        enc_opt.step()
+           
+        # FIRST UPDATE DISCs and then GENs (AAE PAPER)    
+        ''' In https://github.com/eriklindernoren/PyTorch-GAN/blob/master/implementations/aae/aae.py
+        Authors mistakenly update DFECODER params for generator. Only updating Encoder params make more sense here'''
+        
+        real = Variable(Tensor(x.shape[0], 1).fill_(1.0), requires_grad=False)  #TODO: check dimensions
+        fake = Variable(Tensor(x.shape[0], 1).fill_(0.0), requires_grad=False)    
+        
+        temp = np.random.randint(low=0, high=args.K, size=(1,x.shape[0]) ) #TODO: check the dimension
+        categ_batch = np.zeros((temp.size, temp.max()+1))
+        categ_batch[np.arange(temp.size),temp] = 1
+        
+        gauss_batch = Variable(Tensor(np.random.rand( (x.shape[0], args.hidden_size - args.K) ) ), requires_grad=False)  #TODO: check the dimension. STandard Gaussian selected
+        
+        real_cluster =  c_disc(categ_batch)
+        real_style = s_disc(gauss_batch)    
+        
+        fake_cluster = c_disc(cluster)
+        fake_style = s_disc(style)
+        
+        # Cluster disc
+        c_disc_loss = 0.5 * (adv_loss(real_cluster, real) + adv_loss(fake_cluster, fake))
+        
+        c_disc_loss.backward()
+        c_disc_opt.step()
+        
+        # Style disc
+        s_disc_loss = 0.5 * (adv_loss(real_style, real) + adv_loss(fake_style, fake))
+        
+        s_disc_loss.backward()
+        s_disc_opt.step()
+        
+        # Cluster gen(encoder)
+        c_gen_loss = adv_loss(fake_cluster, real)    
+        c_gen_loss.backward()
+        
+        # Style gen(encoder)
+        s_gen_loss = adv_loss(fake_style, real)    
+        s_gen_loss.backward()
+        
+        enc_opt.step()  #TODO: only one encoder update as the Gen for both cluster and style parts
+    
+        ae_loss_ = ae_loss.item()/target_length
+        c_disc_loss_ = c_disc_loss.item()/target_length
+        s_disc_loss_ = s_disc_loss.item()/target_length
+        c_gen_loss_ = c_gen_loss.item()/target_length
+        s_gen_loss_ = s_gen_loss.item()/target_length
+        
+        adv_losses_ = (c_disc_loss_, s_disc_loss_, c_gen_loss_, s_gen_loss_)
+    
+        return cluster, style, ae_loss_, adv_losses_#, dec_attn, dec_out
 
 #%%
 def trainIters(data, models, n_iters, print_every=1000,
@@ -259,7 +256,6 @@ def trainIters(data, models, n_iters, print_every=1000,
         
         ########################
         # Adv loss plot
-
         if i % print_every == 0:
             print("c_disc_loss = {}, s_disc_loss = {}, c_gen_loss = {}, s_gen_loss = {}".format(
             c_disc_loss, s_disc_loss, c_gen_loss, s_gen_loss))
@@ -283,8 +279,10 @@ def trainIters(data, models, n_iters, print_every=1000,
 def main():
     
     # LOADING Data
-    train_raw, valid_raw = dataset_loader("train", args, target_repl)
-    data = train_raw[0]
+    dataset_ = dataset_class(args, phase="train")
+    train_valid_data = data_loader(dataset_, args.batch_size)
+    data = train_valid_data
+     
     ### Device
     device = torch.device('cuda' if torch.cuda.device_count() != 0 else 'cpu')    
     ### Model
