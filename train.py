@@ -127,8 +127,10 @@ def train(data, models, opts, losses):
     ae, c_disc, s_disc = models
     ae_loss, adv_loss = losses    
     
-    for step, x in enumerate(data):
+    step = 0
+    for x in data:
         print("step = ", step)
+        step += 1
         
 #        print("train data shape = ", x[0].shape) # bs x 48 x 76
         x = x[0]
@@ -140,58 +142,58 @@ def train(data, models, opts, losses):
         c_disc_opt.zero_grad()
         s_disc_opt.zero_grad()
         
-        ae_loss = 0
-    
-        cluster, style, ae_loss, dec_attn, dec_out = ae(x, ae_loss, ae_loss)
+#        ae_loss = 0
+        cluster, style, ae_loss_ = ae(x, ae_loss)
         
 #        pdb.set_trace()
         
-        ae_loss.backward()
+        ae_loss_.backward(retain_graph=True)
         dec_opt.step() #TODO: the order matters
         enc_opt.step()
            
         # FIRST UPDATE DISCs and then GENs (AAE PAPER)    
         ''' In https://github.com/eriklindernoren/PyTorch-GAN/blob/master/implementations/aae/aae.py
-        Authors mistakenly update DFECODER params for generator. Only updating Encoder params make more sense here'''
+        Authors mistakenly update DECODER params for generator. Only updating Encoder params make more sense here'''
         
         real = Variable(Tensor(x.shape[0], 1).fill_(1.0), requires_grad=False)  #TODO: check dimensions
         fake = Variable(Tensor(x.shape[0], 1).fill_(0.0), requires_grad=False)    
         
         temp = np.random.randint(low=0, high=args.K, size=(1,x.shape[0]) ) #TODO: check the dimension
-        categ_batch = np.zeros((temp.size, temp.max()+1))
+        categ_batch = np.zeros((temp.size, args.K))#temp.max()+1))
         categ_batch[np.arange(temp.size),temp] = 1
+        categ_batch = Variable(Tensor(categ_batch), requires_grad=False)
         
-        gauss_batch = Variable(Tensor(np.random.rand( (x.shape[0], args.hidden_size - args.K) ) ), requires_grad=False)  #TODO: check the dimension. STandard Gaussian selected
+        gauss_batch = Variable(Tensor(np.random.rand( x.shape[0], int(args.hidden_size - args.K)  ) ), requires_grad=False)  #TODO: STandard Gaussian selected
         
-        real_cluster =  c_disc(categ_batch)
-        real_style = s_disc(gauss_batch)    
+        real_cluster = c_disc(categ_batch)
+        real_style   = s_disc(gauss_batch)    
         
-        fake_cluster = c_disc(cluster)
-        fake_style = s_disc(style)
+        fake_cluster = c_disc(cluster.detach())
+        fake_style = s_disc(style.detach())
+        
+        # Adv losses        
+        c_disc_loss = 0.5 * (adv_loss(real_cluster, real) + adv_loss(fake_cluster, fake))
+        s_disc_loss = 0.5 * (adv_loss(real_style, real) + adv_loss(fake_style, fake))
+        c_gen_loss = adv_loss(fake_cluster, real)      
+        s_gen_loss = adv_loss(fake_style, real) 
         
         # Cluster disc
-        c_disc_loss = 0.5 * (adv_loss(real_cluster, real) + adv_loss(fake_cluster, fake))
-        
-        c_disc_loss.backward()
+        c_disc_loss.backward(retain_graph=True)
         c_disc_opt.step()
         
         # Style disc
-        s_disc_loss = 0.5 * (adv_loss(real_style, real) + adv_loss(fake_style, fake))
-        
-        s_disc_loss.backward()
+        s_disc_loss.backward(retain_graph=True)
         s_disc_opt.step()
         
         # Cluster gen(encoder)
-        c_gen_loss = adv_loss(fake_cluster, real)    
         c_gen_loss.backward()
         
         # Style gen(encoder)
-        s_gen_loss = adv_loss(fake_style, real)    
         s_gen_loss.backward()
         
         enc_opt.step()  #TODO: only one encoder update as the Gen for both cluster and style parts
     
-        ae_loss_ = ae_loss.item()/target_length
+        ae_loss_final = ae_loss_.item()/target_length
         c_disc_loss_ = c_disc_loss.item()/target_length
         s_disc_loss_ = s_disc_loss.item()/target_length
         c_gen_loss_ = c_gen_loss.item()/target_length
@@ -199,7 +201,7 @@ def train(data, models, opts, losses):
         
         adv_losses_ = (c_disc_loss_, s_disc_loss_, c_gen_loss_, s_gen_loss_)
     
-        return cluster, style, ae_loss_, adv_losses_#, dec_attn, dec_out
+        return cluster, style, ae_loss_final, adv_losses_#, dec_attn, dec_out
 
 #%%
 def trainIters(data, models, n_iters, print_every=1000,
