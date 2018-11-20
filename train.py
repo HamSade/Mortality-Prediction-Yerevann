@@ -50,7 +50,7 @@ parser.add_argument('--output_dir', type=str, help='Directory relative which all
 # Added during running                     
 parser.add_argument('--K', type=int, default=5,
                     help='number of clusters')
-parser.add_argument('--n_iters', type=int, default=1000,
+parser.add_argument('--n_epochs', type=int, default=200,
                     help='number of training iters')
 parser.add_argument('--timestep', type=float, default=1.0,
                         help="fixed timestep used in the dataset")  
@@ -121,14 +121,18 @@ Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
 
 #%%
-def train(data, models, opts, losses):
+def train(dl, models, opts, losses):
     
     enc_opt, dec_opt, c_disc_opt, s_disc_opt = opts
     ae, c_disc, s_disc = models
     ae_loss, adv_loss = losses    
     
     step = 0
-    for x in data:
+    
+    print("dl = ", dl)
+    print("dl.shape = ", dl.shape)
+    
+    for x in dl:
         print("step = ", step)
         step += 1
         
@@ -204,7 +208,7 @@ def train(data, models, opts, losses):
         return cluster, style, ae_loss_final, adv_losses_#, dec_attn, dec_out
 
 #%%
-def trainIters(data, models, n_iters, print_every=1000,
+def trainIters(dl, models, n_epochs, print_every=1000,
                plot_every=100, learning_rate=0.01):
     start = time()
     plot_losses = []
@@ -234,9 +238,10 @@ def trainIters(data, models, n_iters, print_every=1000,
     print_loss_ae = 0
     plot_loss_ae  = 0
         
-    for i in range(1, n_iters + 1):
+    for i in range(1, n_epochs + 1):
         
-        cluster, style, ae_loss, adv_losses = train(data, models, opts, losses)
+        print("i = ", i)
+        cluster, style, ae_loss, adv_losses = train(dl, models, opts, losses)
         
         c_disc_loss, s_disc_loss, c_gen_loss, s_gen_loss =  adv_losses
         
@@ -248,8 +253,8 @@ def trainIters(data, models, n_iters, print_every=1000,
         if i % print_every == 0:
             print_loss_avg = print_loss_ae / print_every
             print_loss_ae = 0
-            print('%s (%d %d%%) %.4f' % (timeSince(start, i / n_iters),
-                                         i, i / n_iters * 100, print_loss_avg))
+            print('%s (%d %d%%) %.4f' % (timeSince(start, i / n_epochs),
+                                         i, i / n_epochs * 100, print_loss_avg))
 
         if i % plot_every == 0:
             plot_loss_avg = plot_loss_ae / plot_every
@@ -283,7 +288,7 @@ def main():
     # LOADING Data
     dataset_ = dataset_class(args, phase="train")
     train_valid_data = data_loader(dataset_, args.batch_size)
-    data = train_valid_data
+    dl = train_valid_data
      
     ### Device
     device = torch.device('cuda' if torch.cuda.device_count() != 0 else 'cpu')    
@@ -293,7 +298,7 @@ def main():
     s_disc = style_disc(args.hidden_size - args.K).cuda(device=device)
     models = (ae, c_disc, s_disc)    
     #training
-    trainIters(data, models, args.n_iters, print_every=1000,
+    trainIters(dl, models, args.n_epochs, print_every=1000,
                plot_every=100, learning_rate=0.001)
                               
 ######################################################################
