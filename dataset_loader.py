@@ -94,8 +94,7 @@ class dataset_class(Dataset):
         if phase == "train":
             # train dataset = (train [data, lables], valid[data, labels])
             self.train_set = self.dataset[0][0] # Labels are discarded
-            self.valid_set = self.dataset[1][0]
-            
+            self.valid_set = self.dataset[1][0]          
 #            print("self.train_set.shape, self.valid_set.shape = ", self.train_set.shape, self.valid_set.shape)
         else:
             self.test_set = self.dataset[0]
@@ -114,9 +113,13 @@ class dataset_class(Dataset):
     
 #%% 
 def data_loader(dataset, batch_size = 64):
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=0)
     
-    
-    
-
- 
+#%% testing dataloader
+#train_raw, valid_raw = dataset_loader("train", args, target_repl)
+#data = train_raw[0]
+#labels = train_raw[1]
+##print("data = ", data ) 
+#print("data.shape = ", data.shape ) 
+##print("labels = ", labels )  
+     

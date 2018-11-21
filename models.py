@@ -45,7 +45,7 @@ class style_disc(nn.Module):
                     nn.LeakyReLU(0.2, inplace=True),
                     nn.Linear(4*d_style , 2*d_style), #512, 256),
                     nn.LeakyReLU(0.2, inplace=True),
-                    nn.Linear( 2*d_style, 1 ), #256, 1),
+                    nn.Linear(2*d_style,1 ), #256, 1),
                     nn.Sigmoid()
                           )
     
