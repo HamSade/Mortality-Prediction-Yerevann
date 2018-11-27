@@ -11,6 +11,7 @@ from __future__ import print_function
 import math
 import argparse
 import os
+
 # Hamed-added :
 ###########################################
 import torch
@@ -22,7 +23,6 @@ from time import time
 from dataset_loader import dataset_class, data_loader
 
 from models import AAE, style_disc, cluster_disc
-
 
 import pdb
 import colored_traceback; colored_traceback.add_hook()
@@ -41,7 +41,7 @@ parser.add_argument('--target_repl_coef', type=float, default=0.0)
 parser.add_argument('--data', type=str, help='Path to the data of in-hospital mortality task',
                     default=os.path.join(os.path.dirname(__file__), '../data/processed_mimic/in-hospital-mortality'))
 parser.add_argument('--output_dir', type=str, help='Directory relative which all output files are stored',
-                    default='/log/')
+                    default='/log/')                                       
                     
 #%% common_utils.add_common_arguments(parser)
 #parser.add_argument('--network', type=str, required=False)
@@ -85,9 +85,11 @@ parser.add_argument('--rec_dropout', type=float, default=0.0,
 parser.add_argument('--small_part', dest='small_part', action='store_true')
 parser.add_argument('--whole_data', dest='small_part', action='store_false')
 parser.add_argument('--optimizer', type=str, default='adam')
-parser.add_argument('--lr', type=float, default=0.001, help='learning rate')
+parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
 parser.add_argument('--beta_1', type=float, default=0.9,
                     help='beta_1 param for Adam optimizer')
+parser.add_argument('--beta_2', type=float, default=0.999,
+                    help='beta_2 param for Adam optimizer')                    
 
 parser.set_defaults(small_part=False)
 
@@ -101,7 +103,6 @@ target_repl = (args.target_repl_coef > 0.0 and args.mode == 'train')
 
 #%% Training the Model
 # Teacher forcing: http://minds.jacobs-university.de/sites/default/files/uploads/papers/ESNTutorialRev.pdf
-teacher_forcing_ratio = 0.5
 cuda = True if torch.cuda.is_available() else False
 Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
@@ -114,8 +115,9 @@ def train(dl, models, opts, losses):
     ae_loss, adv_loss = losses    
 
     x = next(iter(dl))
-#        print("train data shape = ", x[0].shape) # bs x 48 x 76
-    x = x[0] #just using the training data
+    
+#    print("train data shape = ", x[0].shape) # bs x 48 x 76
+#    x = x[0] #just using the training data  #TODO: when we have validatioon data too
     target_length = x.shape[1] #seq length
     
     ## SHOULD BE 3-STEP AAE training (Reconst + Discs + Enc (as Gens))
@@ -157,7 +159,7 @@ def train(dl, models, opts, losses):
     c_disc_loss = 0.5 * (adv_loss(real_cluster, real) + adv_loss(fake_cluster, fake))
     s_disc_loss = 0.5 * (adv_loss(real_style, real) + adv_loss(fake_style, fake))
     c_gen_loss = adv_loss(fake_cluster, real)      
-    s_gen_loss = adv_loss(fake_style, real) 
+    s_gen_loss = adv_loss(fake_style, real)
     
     # Cluster disc
     c_disc_loss.backward(retain_graph=True)
@@ -183,11 +185,11 @@ def train(dl, models, opts, losses):
     
     adv_losses_ = (c_disc_loss_, s_disc_loss_, c_gen_loss_, s_gen_loss_)
 
-    return cluster, style, ae_loss_final, adv_losses_#, dec_attn, dec_out
-
+    return cluster, style, ae_loss_final, adv_losses_#, dec_attn, dec_out 
+    
 #%%
 def trainIters(dl, models, n_iters, print_every=100,
-               plot_every=100, learning_rate=0.01):
+               plot_every=100, learning_rate=0.001):
     start = time()
     plot_losses = []
     print_loss_ae = 0  # Reset every print_every
@@ -198,23 +200,34 @@ def trainIters(dl, models, n_iters, print_every=100,
 #    optimizer_D = optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
 
     ae, c_disc, s_disc = models
-    
+  
+    # SGD  
     enc_opt = optim.SGD(ae.encoder.parameters(), lr=learning_rate)
     dec_opt = optim.SGD(ae.decoder.parameters(), lr=learning_rate)  
-#    ae_opt  = ptim.SGD(ae.parameters(), lr=learning_rate) #TODO: might explore this too
-  
     c_disc_opt = optim.SGD(c_disc.parameters(), lr=learning_rate)
     s_disc_opt = optim.SGD(s_disc.parameters(), lr=learning_rate)
     
+    # ADAM
+#    b1 = 0.5; b2 = 0.999
+#    enc_opt    = optim.Adam( ae.encoder.parameters(), lr=learning_rate, betas=(b1, b2))
+#    dec_opt    = optim.Adam( ae.decoder.parameters(), lr=learning_rate, betas=(b1, b2))
+#    c_disc_opt = optim.Adam( c_disc.parameters(), lr=learning_rate, betas=(b1, b2))
+#    s_disc_opt = optim.Adam( s_disc.parameters(), lr=learning_rate, betas=(b1, b2))
+        
     opts = (enc_opt, dec_opt, c_disc_opt, s_disc_opt)    
     
 #    ae_criterion = nn.NLLLoss()
     ae_loss = torch.nn.MSELoss() #torch.nn.L2Loss()
     adv_loss = torch.nn.BCELoss()
     losses = (ae_loss, adv_loss)
-    
+    best_cdl_sofar = np.inf
     print_loss_ae = 0
     plot_loss_ae  = 0
+    
+    # Just to remove previous logs 
+    log_train_file = "log/train.log"
+    with open(log_train_file, 'a') as log_tf:
+        pass
         
     for i in range(1, n_iters + 1):
         
@@ -244,21 +257,53 @@ def trainIters(dl, models, n_iters, print_every=100,
         if i % print_every == 0:
             print("c_disc_loss = {}, s_disc_loss = {}, c_gen_loss = {}, s_gen_loss = {}".format(
             c_disc_loss, s_disc_loss, c_gen_loss, s_gen_loss))
+            
+        ############ Logging events               
+        ae_dict = ae.state_dict()
+        c_disc_dict = c_disc.state_dict()
+        s_disc_dict = s_disc.state_dict()
+        checkpoint = {'ae_model': ae_dict,
+                      'c_disc_model': c_disc_dict,
+                      's_disc_model': s_disc_dict,
+                      'args': args,
+                      'iteration': i}
 
+        ##### Saving all or best models
+        save_path = "saved_models/model"            
+        save_mode = "best"
+
+        if save_mode == 'all':
+            model_name = save_path + '_ael_{ael:2.4f}_cdl_{cdl:2.6f}_sdl_{sdl:2.6f}_cgn_{cgl:2.4f}_sgl_{sgl:2.4f}.chkpt'.format(
+            ael=ae_loss, cdl=c_disc_loss, sdl=s_disc_loss, cgl=c_gen_loss, sgl=s_gen_loss)
+            torch.save(checkpoint, model_name)
+            
+        elif save_mode == 'best':
+            model_name = save_path + '.chkpt'
+            if c_disc_loss < best_cdl_sofar:
+                best_cdl_sofar = c_disc_loss
+                torch.save(checkpoint, model_name)
+#                print('    - [Info] The checkpoint file has been updated. Best CDL so far is {bcdl:2.6f}'.format(bcdl=best_cdl_sofar))
+                    
+        # Logging
+        if log_train_file:
+            with open(log_train_file, 'a') as log_tf:
+                
+                log_tf.write('{iteration},{ael:2.4f},{cdl:2.6f},{sdl:2.6f},{cgl:2.4f},{sgl:2.4f}\n'.format(
+                    iteration=i, ael=ae_loss, cdl=c_disc_loss, sdl=s_disc_loss, cgl=c_gen_loss, sgl=s_gen_loss))
 #    showPlot(plot_losses)
     
 #%% Plotting results
-#import matplotlib.pyplot as plt
-#plt.switch_backend('agg')
-#import matplotlib.ticker as ticker
-#
-#def showPlot(points):
-#    plt.figure()
-#    fig, ax = plt.subplots()
-#    # this locator puts ticks at regular intervals
-#    loc = ticker.MultipleLocator(base=0.2)
-#    ax.yaxis.set_major_locator(loc)
-#    plt.plot(points)
+import matplotlib.pyplot as plt
+plt.switch_backend('agg')
+import matplotlib.ticker as ticker
+
+def showPlot(points):
+    plt.figure()
+    fig, ax = plt.subplots()
+    # this locator puts ticks at regular intervals
+    loc = ticker.MultipleLocator(base=0.2)
+    ax.yaxis.set_major_locator(loc)
+    plt.plot(points)
 
 #%% Training
 def main():

@@ -3,12 +3,14 @@
 Created on Fri Oct  5 10:40:35 2018
 @author: hamed 
 """
-
-import torch
-from torch.utils import data
+try:
+    import torch
+    from torch.utils import data
+except:
+    pass
 
 #%%
-from Reader import Reader
+#from Reader import Reader
 from Reader import InHospitalMortalityReader as HMR
 
 #%%
@@ -70,17 +72,45 @@ class dataset(HMR):
 
 
 #%% Testing dataset
-dataset_ =  dataset(phase="test")
-
-#%%
+#import matplotlib.pyplot as plt
+#import numpy as np
+#
+#dataset_ =  dataset(phase="train")
+#
 #print('dataset size = ', len(dataset_))
 ##dataset_.random_shuffle()
-#data__ = dataset_._data.read_example(111) #max test is 3235
+#data__ = dataset_._data.read_example(14679) #max test is 3235
 #
 #X = data__['X']
+#t = data__ ['t']
+#y = data__ ['y']
+#header = data__ ['header']
+#name = data__ ['name']
+#
+#print("X =", X)
+#
 #print("X shape = ", X.shape)
+##print("header = ", header)
+#
+#X = np.array(X)
+#X[X=='None']='nan'
+#X[X=='']='nan'
+#X[X=='Flex-withdraws']='nan'
+#X[X=='No Response-ETT']='nan'
+#X[X=='Obeys Commands']='nan'
+#X[X=='Oriented']='nan'
+#X[X=='Confused']='nan'
+##X[X=='No Response-ETT']='0'
 #
 #
+#X = X.astype(np.float)
+#
+#plt.figure()
+#feat_idx = 2
+#print(X[:,feat_idx])
+#plt.stem(X[:,feat_idx])
+#plt.title(header[feat_idx])
+
 #i = 28; j=9
 ##if X[i,j] == '':
 ##    X[i,j] = -0.01
@@ -92,18 +122,18 @@ dataset_ =  dataset(phase="test")
 #print("name =", data__['name'])
 
 #%% Data loader
-def loader(dataset, batch_size=64, shuffle=True, num_workers=0):
+def loader(dataset__, batch_size=64, shuffle=True, num_workers=0):
     if shuffle:
-        dataset._data.random_shuffle()
+        dataset__._data.random_shuffle()
     params = {'batch_size': batch_size, 'shuffle': shuffle, 'num_workers':num_workers}
-    return data.DataLoader(dataset._data, **params) #, collate_fn=collate_fn_temp)
+    return data.DataLoader(dataset__._data, **params) #, collate_fn=collate_fn_temp)
     
 #%% Testing loader
 
-loader_  = loader(dataset_)
-
-for x in loader_:
-    print(x)
+#loader_  = loader(dataset_)
+#
+#for x in loader_:
+#    print(x)
 
                   
                   
