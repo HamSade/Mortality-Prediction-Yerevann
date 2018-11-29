@@ -66,7 +66,15 @@ parser.add_argument('--depth', type=int, default=1,
                     help='number of bi-LSTMs')
 parser.add_argument('--epochs', type=int, default=100,
                     help='number of epochs to train')
-                                                        
+                    
+parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
+parser.add_argument('--beta_1', type=float, default=0.9,
+                    help='beta_1 param for Adam optimizer')
+parser.add_argument('--beta_2', type=float, default=0.999,
+                    help='beta_2 param for Adam optimizer') 
+                    
+                    
+########################                                                        
 parser.add_argument('--load_state', type=str, default="",
                     help='state file path')
 parser.add_argument('--batch_size', type=int, default=16)
@@ -84,13 +92,9 @@ parser.add_argument('--rec_dropout', type=float, default=0.0,
 
 parser.add_argument('--small_part', dest='small_part', action='store_true')
 parser.add_argument('--whole_data', dest='small_part', action='store_false')
-parser.add_argument('--optimizer', type=str, default='adam')
-parser.add_argument('--lr', type=float, default=0.0001, help='learning rate')
-parser.add_argument('--beta_1', type=float, default=0.9,
-                    help='beta_1 param for Adam optimizer')
-parser.add_argument('--beta_2', type=float, default=0.999,
-                    help='beta_2 param for Adam optimizer')                    
-
+                  
+                 
+#########################
 parser.set_defaults(small_part=False)
 
 args = parser.parse_args()
@@ -189,30 +193,30 @@ def train(dl, models, opts, losses):
     
 #%%
 def trainIters(dl, models, n_iters, print_every=100,
-               plot_every=100, learning_rate=0.001):
+               plot_every=100):
     start = time()
     plot_losses = []
     print_loss_ae = 0  # Reset every print_every
     plot_loss_ae = 0  # Reset every plot_every
     
 #    optimizer_G = optim.Adam( itertools.chain(encoder.parameters(), decoder.parameters()),
-#                                lr=opt.lr, betas=(opt.b1, opt.b2))
-#    optimizer_D = optim.Adam(discriminator.parameters(), lr=opt.lr, betas=(opt.b1, opt.b2))
+#                                lr=args.lr, betas=(opt.b1, opt.b2))
+#    optimizer_D = optim.Adam(discriminator.parameters(), lr=args.lr, betas=(opt.b1, opt.b2))
 
     ae, c_disc, s_disc = models
   
     # SGD  
-    enc_opt = optim.SGD(ae.encoder.parameters(), lr=learning_rate)
-    dec_opt = optim.SGD(ae.decoder.parameters(), lr=learning_rate)  
-    c_disc_opt = optim.SGD(c_disc.parameters(), lr=learning_rate)
-    s_disc_opt = optim.SGD(s_disc.parameters(), lr=learning_rate)
+    enc_opt = optim.SGD(ae.encoder.parameters(), lr=args.lr)
+    dec_opt = optim.SGD(ae.decoder.parameters(), lr=args.lr)  
+    c_disc_opt = optim.SGD(c_disc.parameters(), lr=args.lr)
+    s_disc_opt = optim.SGD(s_disc.parameters(), lr=args.lr)
     
     # ADAM
 #    b1 = 0.5; b2 = 0.999
-#    enc_opt    = optim.Adam( ae.encoder.parameters(), lr=learning_rate, betas=(b1, b2))
-#    dec_opt    = optim.Adam( ae.decoder.parameters(), lr=learning_rate, betas=(b1, b2))
-#    c_disc_opt = optim.Adam( c_disc.parameters(), lr=learning_rate, betas=(b1, b2))
-#    s_disc_opt = optim.Adam( s_disc.parameters(), lr=learning_rate, betas=(b1, b2))
+#    enc_opt    = optim.Adam( ae.encoder.parameters(), lr=args.lr, betas=(b1, b2))
+#    dec_opt    = optim.Adam( ae.decoder.parameters(), lr=args.lr, betas=(b1, b2))
+#    c_disc_opt = optim.Adam( c_disc.parameters(), lr=args.lr, betas=(b1, b2))
+#    s_disc_opt = optim.Adam( s_disc.parameters(), lr=args.lr, betas=(b1, b2))
         
     opts = (enc_opt, dec_opt, c_disc_opt, s_disc_opt)    
     
@@ -322,7 +326,7 @@ def main():
     models = (ae, c_disc, s_disc)    
     #training
     trainIters(dl, models, args.n_iters, print_every=1000,
-               plot_every=100, learning_rate=0.001)
+               plot_every=100)
                               
 ######################################################################
 def asMinutes(s):

@@ -118,13 +118,13 @@ class DecoderRNN(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.rnn = nn.GRU(hidden_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
         
     def forward(self, input, hidden):
         output = input
 #        print("dec_in.shape = ", output.shape)
-        output, hidden = self.gru(output, hidden)
+        output, hidden = self.rnn(output, hidden)
 #        output = self.softmax(self.out(output[0]))
         return output, hidden
 
@@ -138,12 +138,12 @@ class EncoderRNN(nn.Module):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
 #        self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.rnn = nn.GRU(hidden_size, hidden_size)
 
     def forward(self, input, hidden):
 #        embedded = self.embedding(input).view(1, 1, -1)
         output = input#.contiguous().view(1, 1, -1)  #TODO: Manipulating input to fit GRU (seq_len, batch, input_size)
-        output, hidden = self.gru(output, hidden)
+        output, hidden = self.rnn(output, hidden)
 #        print("GRU output shape = ", output.shape)
         return output, hidden
 
